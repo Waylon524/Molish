@@ -1,41 +1,24 @@
 # Molish
 
-Molish 是一门描述、查询和重放分子与细胞机制的声明式语言。模型用稳定的实体 ID 表示分子、复合体和区室，用关系、状态变量和计数器描述初态，再声明哪些条件允许一步机制变化，以及这一步会改变什么。
+> **一门用于描述、查询和重放分子与细胞机制的声明式语言。** 用规则描述机制，检查干预如何改变可达状态，并重放经过核查的事件轨迹。
+>
+> **A declarative language for molecular and cellular mechanisms.** Describe a mechanism as rules, check how an intervention changes what can happen, and replay a verified sequence of events.
 
-Molish 的执行器可以回答“这一步能发生吗”“禁止某条规则之后，目标状态还能到达吗”。可达结果附带可重放的事件见证，不可达结果可用闭包证书核对。经验证的轨迹也可以作为 Molstage 等可视化工具的输入，让动画中的变化对应到模型里的实体与规则。
+[![Specification draft 0.4](https://img.shields.io/badge/Specification-0.4%20draft-4051b5)](engine/Molish-0.4-spec.md)
+[![Python 3.9+](https://img.shields.io/badge/Python-3.9%2B-3776ab)](#quick-start)
+[![Apache-2.0](https://img.shields.io/badge/License-Apache--2.0-blue)](LICENSE)
 
-仓库包含 **0.4 规范草案**、**0.3 有限状态执行核心**、Python 参考实现、可复现的酶促事件示例，以及独立的 TypeScript 空间群体运行时。[Molish 0.4 语言规范](engine/Molish-0.4-spec.md)
+[中文文档](#中文) · [English Documentation](#english) · [语言规范 / Specification](engine/Molish-0.4-spec.md) · [示例轨迹 / Example trace](engine/enzyme-trace.json)
 
-## 主要能力
+---
 
-| 能力 | 在模型中如何使用 |
-| --- | --- |
-| 带类型的机制模型 | 用实体、关系、槽和有界计数表达结合、转运、调节和计量变化。 |
-| 可复用的规则 | 规则模板为参与者声明类型。模块的启用条件与规则自身的条件在同一前态求值，通过后一起提交效果。 |
-| 区室与有方向的结构 | 表达实体所属的区室、区室间允许的转移，以及轨道上的方向、邻接和区间。 |
-| 查询与干预 | 从给定初态搜索目标。比较禁用规则或特定规则绑定前后的可达性。 |
-| 证据与来源 | 为规则保留假设、观测或文献来源，并在指定上下文下检查哪些断言适用。 |
-| 定义复用与跨层映射 | 锁定定义版本，为多个实例复用定义，并核查一条细粒度轨迹投影到粗粒度模型后的行为。 |
-| 重放与交换 | 用确定性 CBOR 编码封包，通过 SHA-256 将结果绑定到模型与查询。已核查的状态和事件可导出给外部工具。 |
+## 中文
 
-### 模型、查询与验证
+[快速开始](#快速开始) · [核心特性](#核心特性) · [仓库结构](#仓库结构) · [验证与贡献](#验证与贡献)
 
-```mermaid
-flowchart TD
-    M["模型与初态"] --> E["有限状态执行器"]
-    Q["查询与干预"] --> E
-    E --> W["事件见证"]
-    E --> C["闭包证书"]
-    W --> V["结果核查"]
-    C --> V
-    V --> P["查询结论与重放数据"]
-```
+### 快速开始
 
-0.4 在有限状态核心之上增加定义锁、来源、跨层投影和应用封包。模型、查询与结果分别记录摘要。修改模型、适用条件或干预之后，旧结果仍能对应到它原来的输入。
-
-## 快速开始
-
-使用 Python 3.9 或更新版本。参考实现只依赖 Python 标准库。
+需要 Python 3.9 或更高版本。参考实现只使用 Python 标准库。
 
 ```sh
 git clone https://github.com/Waylon524/Molish.git
@@ -43,98 +26,122 @@ cd Molish
 python3 engine/export_enzyme.py enzyme-trace.json
 ```
 
-生成的 `enzyme-trace.json` 包含正常反应和禁用转化两种情况。仓库也提供一份可以直接阅读的默认输出。[示例输入](engine/enzyme.json) · [示例输出](engine/enzyme-trace.json)
+示例从 3 个游离底物开始，用实体 ID `101` 跟踪同一个酶。运行一次即可比较正常机制和禁用转化规则后的机制。示例中的计数是离散模型值，每一步表示一次规则应用。
 
-### 一个基质酶促事件
+| 情况 | 事件轨迹 | 能否到达产物释放状态 |
+| --- | --- | --- |
+| 正常 | 游离 → 结合 → 转化 → 释放 | 能。事件见证记录了到达释放的合法步骤，最终有 2 个游离底物和 1 个已释放产物。 |
+| 禁用转化 | 游离 → 结合 | 不能。结果保留一条到达结合的见证，以及一份独立的闭包证书，用来核查该初态下无法到达释放。 |
 
-示例从一个逻辑区室和 3 个游离底物开始。模型用同一个实体 ID `101` 跟踪酶在各步中的状态。
+在生成的 JSON 中，`scenarios.normal` 和 `scenarios.blocked` 对应两种情况。`steps` 记录实体 ID、状态、计数、触发规则与证据，`targetReached` 回答释放是否可达，`proof` 保存可供核查的 CBOR 封包。[默认输入](engine/enzyme.json) · [预生成结果](engine/enzyme-trace.json)
 
-| 步骤 | 机制状态 | 游离底物 | 已释放产物 |
-| --- | --- | ---: | ---: |
-| 初态 | 酶游离 | 3 | 0 |
-| 结合 | 酶结合一个底物 | 2 | 0 |
-| 转化 | 已结合的底物变为产物 | 2 | 0 |
-| 释放 | 酶释放一个产物 | 2 | 1 |
-
-禁用转化规则后，模型仍可到达结合状态。导出会给出到达结合的事件见证，以及一份单独的闭包证书，用于核对释放目标不可达。四个阶段描绘的是一次示意酶促事件，计数是该模型里的离散值。
-
-### 自定义输入
-
-示例导出器接受一个小型 JSON 输入。它用这些参数编译示例机制，模型中的结合、转化和释放规则由导出器提供。
-
-```json
-{
-  "entityId": 101,
-  "region": "matrix",
-  "initialSubstrate": 3
-}
-```
-
-将参数保存为 `my-enzyme.json`，然后运行下面的命令。
+要尝试其他初态，把默认输入另存为 `my-enzyme.json`，修改其中的 `entityId`、`region` 或 `initialSubstrate`。这三个字段是酶促示例导出器的配置，通用模型格式见[语言规范](engine/Molish-0.4-spec.md)。
 
 ```sh
+cp engine/enzyme.json my-enzyme.json
+# 编辑 my-enzyme.json，然后重新导出。
 python3 engine/export_enzyme.py --source my-enzyme.json my-trace.json
 ```
 
-`entityId` 和 `initialSubstrate` 是正的 32 位无符号整数，`region` 是非空逻辑区室名。省略输出路径时，导出器把 JSON 写到标准输出。
+### 核心特性
 
-### 读取结果
+- **机制建模。** 用有稳定 ID 的实体表示分子、复合体和区室，用类型化关系、状态槽和有界计数器表达结合、转运与调节。可复用的规则模板声明参与者类型、守卫和效果。规则与模块的守卫基于同一前态求值，效果作为一次状态变化提交。
+- **查询与干预。** 从指定初态搜索目标，可以禁用整条规则或某个具体绑定。事件见证记录可重放的路径。闭包证书列出一组包含初态、在干预下对允许后继封闭且不含目标的状态。
+- **版本与来源。** 0.4 草案支持按摘要锁定可复用定义，记录假设、观测和文献等证据，按上下文筛选适用断言，并核查单条轨迹从细粒度模型到粗粒度模型的投影。机器封包采用确定性 CBOR，以 SHA-256 摘要绑定模型、查询和结果。
+- **重放与可视化。** 宿主可以通过实体 ID 和区室名把已核查的轨迹绑定到场景。规范定义了面向 Molstage 等宿主的 3D 重放清单和带证据引用的知识图谱快照。TypeScript 空间运行时按宿主提供的区域约束和随机种子，生成可复现的群体位置与插值轨迹。
 
-- `scenarios.normal` 和 `scenarios.blocked` 分别对应正常路径和禁用转化后的路径。
-- `steps` 按逻辑顺序给出酶 ID、阶段、底物和产物计数、触发规则及证据。
-- `modelDigest`、`queryDigest` 和 `resultDigest` 分别绑定模型、重放查询与重放结果。`caseId` 标识本次轨迹的初态。
-- `targetReached` 回答释放目标能否到达。`targetQueryDigest` 和 `targetResultDigest` 绑定释放目标的查询与结果。禁用转化时，结合见证与释放的闭包证书有各自的查询和结果摘要。
-- `proof` 保留十六进制形式的 CBOR 封包，可用参考实现核对事件见证及闭包证书。
+0.4 仍是规范草案，沿用 0.3 的有限状态执行语义。Python 参考实现面向小型、显式初态模型。物理时间、扩散和反应速率由外部定量模型定义，SBML / BNGL 部分目前只定义适配资格检查。[0.4 语言规范](engine/Molish-0.4-spec.md) · [空间运行时说明](spatial/README.md)
 
-## 与可视化工具集成
+### 仓库结构
 
-播放器可以用稳定的实体 ID 把屏幕中的一个对象绑定到 `steps` 中的轨迹，用区室名匹配场景里的合法区域。逻辑步、画面插值和播放时间分别处理，同一轨迹可以适配不同的几何场景。场景可另外声明由合法区域、数量与随机种子控制的背景粒子，机制状态由轨迹定义。
-
-规范的第 5 节还定义了绑定模型、查询、结果和案例的 3D 重放清单，以及带证据引用的知识图谱快照。几何资产与视觉时间表由可视化宿主管理。示例导出器提供便于查看和接入的 JSON。[重放与输出规范](engine/Molish-0.4-spec.md#5-输出时间与定量边界)
-
-### 在合法区域内生成群体
-
-TypeScript 运行时从粒子数量、半径、最大步长与随机种子生成固定步长的轨迹，无需逐个指定初始坐标。宿主提供区域边界和球体容纳检查。若宿主提供沿线段扫过的球体检查，粒子可以向合法区域内部移动，同时保证插值路径遵守边界。在相同配置、区域检查与运行环境下，种子可以复现初始分布和移动过程。运行时独立于 Three.js 等渲染库。[空间群体运行时说明](spatial/README.md)
-
-## 仓库结构
-
-| 文件 | 用途 |
+| 路径 | 内容 |
 | --- | --- |
-| [`engine/Molish-0.4-spec.md`](engine/Molish-0.4-spec.md) | 0.4 封包、定义、证据、跨层投影及 0.3 核心语义 |
-| [`engine/finite03.py`](engine/finite03.py) | 0.3 状态、守卫、原子状态更新与搜索 |
-| [`engine/molish04.py`](engine/molish04.py) | 0.4 封包、装配、结果验证、投影与快照 |
-| [`engine/export_enzyme.py`](engine/export_enzyme.py) | 编译示例、验证见证和闭包证书、导出播放数据 |
-| [`engine/verify03.py`](engine/verify03.py)、[`engine/verify04.py`](engine/verify04.py) | 规范验收脚本与编码向量检查 |
-| [`engine/test_enzyme.py`](engine/test_enzyme.py) | 模块守卫、个体身份、计量与干预回归测试 |
-| [`spatial/`](spatial/) | 空间群体的初始化、固定步更新与插值 |
+| [语言规范](engine/Molish-0.4-spec.md) | 0.4 草案、0.3 核心语义和可复现的编码向量 |
+| [有限状态核心](engine/finite03.py) | 规则绑定、状态变更和可达性搜索 |
+| [0.4 参考实现](engine/molish04.py) | 封包装配、证明核查、轨迹投影与快照 |
+| [酶促示例导出器](engine/export_enzyme.py) | 从示例配置构建模型并导出经过核查的轨迹 |
+| [空间群体运行时](spatial/README.md) | 独立的 TypeScript 模块与宿主接入示例 |
 
-## 运行检查
+### 验证与贡献
 
-在仓库根目录运行以下命令。
+在仓库根目录运行以下命令，核查 0.3 与 0.4 规范的验收用例、酶促示例的回归测试，以及默认轨迹能否逐字节重建。
 
 ```sh
 python3 engine/verify03.py
 python3 engine/verify04.py
 python3 -m unittest discover -s engine
-```
-
-两个规范脚本以 JSON 输出检查结果及编码向量，当前分别有 42 项和 48 项检查。单元测试另包含 6 项回归检查。以下命令核对仓库中的默认轨迹是否可逐字节重建。
-
-```sh
 python3 engine/export_enzyme.py | cmp - engine/enzyme-trace.json
 ```
 
-## 当前范围
+欢迎报告可复现的模型、编码或验证问题。涉及规则语义时，请附上初态、目标查询、干预条件和预期结果。修改封包或规则语义时，请同步更新规范、编码向量与相关检查。
 
-- 参考实现面向小型、显式枚举初态的有限状态模型。0.4 草案的完整互操作性和大规模模型性能仍待验证。
-- 闭包证书支持它绑定的模型、初态和查询。单条跨层投影支持核查那条轨迹，跨初态结论需要相应的证书。
-- 教学轨迹用逻辑步描述过程。连续坐标、扩散、化学速率和物理时间由外部呈现或定量配置定义。
-- 当前 SBML 和 BNGL 接口提供定量适配资格检查。完整的模型转换与数值模拟由各自的适配器或模拟器承担。
+---
 
-## 贡献
+## English
 
-欢迎提交最小可复现的机制模型、编码或验证错误，以及需要澄清的规范条文。报告语义问题时，请附上初始状态、查询、适用干预和预期结果。修改封包或规则语义时，请同时更新规范、编码向量和相应测试。
+[Quick start](#quick-start) · [Core features](#core-features) · [Repository layout](#repository-layout) · [Verification and contributions](#verification-and-contributions)
 
-## 许可证
+### Quick start
 
-Molish 使用 [Apache License 2.0](LICENSE)。
+Use Python 3.9 or later. The reference implementation uses only the Python standard library.
+
+```sh
+git clone https://github.com/Waylon524/Molish.git
+cd Molish
+python3 engine/export_enzyme.py enzyme-trace.json
+```
+
+The example starts with three free substrate molecules and follows the same enzyme, entity `101`. One run compares the mechanism with and without the conversion rule. The counts are discrete model values, and each transition represents one rule application.
+
+| Scenario | Event trace | Is product release reachable? |
+| --- | --- | --- |
+| Normal | Free → bound → converted → released | Yes. An event witness records a valid path to release, ending with two free substrate molecules and one released product. |
+| Conversion disabled | Free → bound | No. The result includes a witness for binding and a separate closure certificate that proves release is unreachable from this initial state. |
+
+In the exported JSON, `scenarios.normal` and `scenarios.blocked` contain the two cases. `steps` records entity IDs, states, counts, rules, and evidence. `targetReached` answers the release query, and `proof` contains the CBOR packages used for verification. [Default input](engine/enzyme.json) · [Pre-generated result](engine/enzyme-trace.json)
+
+To try a different initial condition, copy the default input to `my-enzyme.json` and edit `entityId`, `region`, or `initialSubstrate`. These fields configure the enzyme exporter. For the general model format, see the [language specification (Chinese)](engine/Molish-0.4-spec.md).
+
+```sh
+cp engine/enzyme.json my-enzyme.json
+# Edit my-enzyme.json, then export the trace.
+python3 engine/export_enzyme.py --source my-enzyme.json my-trace.json
+```
+
+### Core features
+
+- **Mechanism models.** Give molecules, complexes, and compartments stable IDs. Use typed relations, state slots, and bounded counters to describe binding, transport, and regulation. Reusable rule templates declare typed participants, guards, and effects. Rule and module guards evaluate against the same pre-state, and effects apply as one state transition.
+- **Queries and interventions.** Search for a target from a given initial state and disable whole rules or individual bindings. An event witness records a replayable path. A closure certificate identifies a set that contains the initial state, is closed under the allowed transitions, and excludes the target.
+- **Versions and provenance.** The 0.4 draft pins reusable definitions by digest, records evidence such as assumptions and observations, filters claims by context, and checks the projection of a single trace from a fine-grained model to a coarser one. Deterministic CBOR provides the machine format, and SHA-256 digests bind models, queries, and results.
+- **Replay and visualization.** Host applications can bind checked traces to scenes using entity IDs and compartment names. The specification defines 3D replay manifests for hosts such as Molstage, along with knowledge-graph snapshots that reference evidence. The TypeScript spatial runtime uses host-defined region constraints and a seed to reproduce particle positions and interpolate their motion.
+
+Version 0.4 is a draft built on the 0.3 finite-state semantics. The Python reference implementation targets small models with explicit initial states. Physical time, diffusion, and reaction rates belong to external quantitative models. The SBML and BNGL provisions currently cover eligibility checks for mapping. [0.4 specification (Chinese)](engine/Molish-0.4-spec.md) · [Spatial runtime guide (Chinese)](spatial/README.md)
+
+### Repository layout
+
+| Path | Contents |
+| --- | --- |
+| [Language specification](engine/Molish-0.4-spec.md) | The 0.4 draft, 0.3 core semantics, and reproducible encoding vectors |
+| [Finite-state core](engine/finite03.py) | Rule binding, state updates, and reachability search |
+| [0.4 reference implementation](engine/molish04.py) | Package assembly, proof checking, trace projection, and snapshots |
+| [Enzyme example exporter](engine/export_enzyme.py) | Builds a model from the example configuration and exports verified traces |
+| [Spatial population runtime](spatial/README.md) | Standalone TypeScript module with a host integration example |
+
+### Verification and contributions
+
+Run these commands from the repository root to check the 0.3 and 0.4 conformance cases, run the enzyme regression tests, and reproduce the default trace byte for byte.
+
+```sh
+python3 engine/verify03.py
+python3 engine/verify04.py
+python3 -m unittest discover -s engine
+python3 engine/export_enzyme.py | cmp - engine/enzyme-trace.json
+```
+
+Reports about models, encodings, or verification are welcome. For a rule semantics issue, include the initial state, target query, intervention, and expected result. Changes to the package format or rule semantics should update the specification, encoding vectors, and relevant checks together.
+
+---
+
+## 许可证 / License
+
+[Apache License 2.0](LICENSE)
